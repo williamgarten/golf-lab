@@ -4,6 +4,7 @@ import { followPutter, analyzeStroke } from './stroke.js';
 import { analyzePutt, summarize, greenSpeed, fmtAngle, fmtLen, fmtSpeed, paceVerdict, HOLE_RADIUS_CM } from './analysis.js';
 import { putts, settings, lastSetup } from './store.js';
 import { openCapture, setupCaptureButtons, setupLevelCheck } from './capture.js';
+import { setupWedges, renderWedges } from './wedges.js';
 
 const $ = (id) => document.getElementById(id);
 const video = $('video');
@@ -576,6 +577,7 @@ $('btn-live').addEventListener('click', () => openCapture((blob, meta) => {
 }));
 setupCaptureButtons();
 setupLevelCheck();
+setupWedges();
 
 // ---------------------------------------------------------------- history + settings
 
@@ -653,13 +655,17 @@ for (const b of document.querySelectorAll('nav button')) {
   b.addEventListener('click', () => {
     for (const o of document.querySelectorAll('nav button')) o.classList.toggle('active', o === b);
     $('tab-putt').hidden = b.dataset.tab !== 'putt';
+    $('tab-wedges').hidden = b.dataset.tab !== 'wedges';
     $('tab-history').hidden = b.dataset.tab !== 'history';
     if (b.dataset.tab === 'history') renderHistory();
+    if (b.dataset.tab === 'wedges') renderWedges();
   });
 }
 
 // ---------------------------------------------------------------- boot
 
+const startTab = new URLSearchParams(location.search).get('tab');
+if (startTab) document.querySelector(`nav button[data-tab="${startTab}"]`)?.click();
 const demo = new URLSearchParams(location.search).get('demo');
 if (demo) loadVideo(demo);
 

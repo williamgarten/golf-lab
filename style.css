@@ -147,3 +147,31 @@ body.capturing header, body.capturing main { display: none; }
 .checks li.bad { color: var(--accent); }
 .checks li.unknown { color: var(--muted); }
 #cap-hole { width: 80px; font: inherit; background: var(--panel-2); color: var(--text); border: 0; border-radius: 8px; padding: 6px; }
+
+/* wedges: clock drills */
+.sel { font: inherit; background: var(--panel-2); color: var(--text); border: 0; border-radius: 8px; padding: 6px; }
+#tab-wedges .row { flex-wrap: wrap; }
+#wvideo { position: fixed; width: 1px; height: 1px; opacity: 0; pointer-events: none; left: 0; top: 0; }
+#w-progress .bar { height: 6px; background: var(--panel-2); border-radius: 3px; overflow: hidden; }
+#w-progress .bar > div { height: 100%; width: 0; background: var(--accent); transition: width 0.1s; }
+#wcap { max-width: 900px; margin: 0 auto; padding: 8px 16px 24px; }
+#wcap-stage { position: relative; width: 100%; margin: 0 auto; background: #000; border-radius: var(--radius); overflow: hidden; }
+#wcam, #wcap-overlay { position: absolute; inset: 0; width: 100%; height: 100%; }
+#wcam { object-fit: cover; }
+.wread { display: flex; gap: 12px; justify-content: center; margin-top: 10px; min-height: 52px; }
+.wread div { text-align: center; background: var(--panel); border-radius: 12px; padding: 6px 14px; }
+.wread b { display: block; font-size: 28px; line-height: 1.1; }
+.wread span { font-size: 12px; color: var(--muted); }
+.ok-t { color: var(--good); }
+.bad-t { color: var(--accent); }
+.wshots { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 10px 0; }
+.wshots figure { margin: 0; }
+.wshots canvas { width: 100%; display: block; border-radius: 10px; background: #000; }
+.wshots figcaption { text-align: center; font-size: 13px; color: var(--muted); margin-top: 4px; }
+.carry { width: 70px; font: inherit; background: var(--panel-2); color: var(--text); border: 0; border-radius: 8px; padding: 6px; }
+.ychart { width: 100%; border-collapse: collapse; font-size: 14px; }
+.ychart th { text-align: left; color: var(--muted); font-weight: 600; padding: 4px 4px 4px 0; }
+.ychart td { padding: 6px 4px 6px 0; border-top: 1px solid var(--panel-2); }
+.ychart td.num { text-align: right; font-variant-numeric: tabular-nums; }
+body.capturing #wcap:not([hidden]) { display: block; }
+#w-status.error { color: var(--bad); }

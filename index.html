@@ -18,6 +18,7 @@
     <h1>Golf Lab</h1>
     <nav>
       <button data-tab="putt" class="active">Putt</button>
+      <button data-tab="wedges">Wedges</button>
       <button data-tab="history">History</button>
     </nav>
   </header>
@@ -118,6 +119,56 @@
       </div>
     </section>
 
+    <section id="tab-wedges" hidden>
+      <div class="card">
+        <h2>Clock drills</h2>
+        <p>Film yourself from the front. Golf Lab reads where your <b>lead arm</b> stops going back and going through, like a clock hand: arm straight down is 6:00, level with the ground is 9:00. Hit 9 to 9, 7:30 to 7:30… and build your own yardage chart.</p>
+        <label class="row">Club
+          <select id="w-club" class="sel">
+            <option>PW</option><option>GW 50°</option><option>52°</option><option>54°</option><option selected>56°</option><option>58°</option><option>60°</option><option>9 iron</option>
+          </select>
+        </label>
+        <label class="row">Back to <select id="w-back" class="sel"><option value="7.5">7:30</option><option value="8">8:00</option><option value="9">9:00</option><option value="10.5">10:30</option><option value="12">12 (full)</option><option value="">no target</option></select>
+          through to <select id="w-thru" class="sel"><option value="7.5">7:30</option><option value="8">8:00</option><option value="9">9:00</option><option value="10.5">10:30</option><option value="12">12 (full)</option><option value="">no target</option></select></label>
+        <p class="muted small">Through is counted as a mirror image: “9 to 9” = arm level with the ground on both sides (some coaches call it 9 to 3).</p>
+        <button id="w-live" class="btn primary block">Start a clock-drill session</button>
+        <p class="muted small center">The camera watches every swing and tells you the positions out loud. No taps between shots.</p>
+        <label class="btn block">
+          Choose a swing video you already filmed
+          <input id="w-file" type="file" accept="video/*" hidden>
+        </label>
+        <p id="w-status" class="small muted"></p>
+        <div id="w-progress" hidden><div class="bar"><div></div></div></div>
+      </div>
+
+      <details class="card guide">
+        <summary>Camera setup for wedges</summary>
+        <svg class="diagram" viewBox="0 0 320 150" role="img" aria-label="Top view: phone on a tripod 10 feet in front of the golfer, facing them">
+          <line x1="20" y1="40" x2="300" y2="40" class="g-dim"/>
+          <text x="300" y="34" text-anchor="end" class="g-txt">target →</text>
+          <circle cx="160" cy="56" r="4" class="g-ball"/>
+          <rect x="146" y="22" width="28" height="12" rx="4" class="g-putter"/>
+          <text x="160" y="16" text-anchor="middle" class="g-txt">you</text>
+          <line x1="160" y1="64" x2="160" y2="122" class="g-dim"/>
+          <text x="166" y="98" class="g-txt">10 ft</text>
+          <rect x="146" y="124" width="28" height="9" rx="2" class="g-phone"/>
+          <text x="160" y="146" text-anchor="middle" class="g-txt">phone, sideways, waist high</text>
+        </svg>
+        <ul class="small">
+          <li><b>In front of you</b>, square to your chest (on the ball line, looking at you) — about <b>10 ft away</b>.</li>
+          <li>Phone <b>sideways (landscape)</b> at <b>waist height</b>, on a normal tripod — no overhead arm needed.</li>
+          <li>Your <b>whole body</b>, head to feet, in the picture, with room above your head for the club.</li>
+          <li>Phone <b>straight up and down</b> (not tilted) — the app checks this. A tilted phone makes 9:00 read wrong.</li>
+          <li>A plain background and no one else in the picture helps the body tracker.</li>
+          <li>The first time, the body tracker (~10 MB) downloads. After that it works offline.</li>
+        </ul>
+      </details>
+
+      <div id="w-last" class="card" hidden></div>
+      <div id="w-chart"></div>
+      <div id="w-recent"></div>
+    </section>
+
     <section id="tab-history" hidden>
       <div id="stats"></div>
       <ul id="list" class="list"></ul>
@@ -137,7 +188,7 @@
           </select>
         </label>
         <p class="muted small">Only change this if you film in Slo-mo: iPhone hands the app a slowed-down copy, so speeds would read 4–8× too slow.</p>
-        <label class="row">I putt
+        <label class="row">I play
           <select id="set-hand">
             <option value="right">Right-handed</option>
             <option value="left">Left-handed</option>
@@ -145,6 +196,7 @@
         </label>
         <label class="row"><input type="checkbox" id="set-flip"> Swap left/right (only if you film with the selfie camera)</label>
         <button id="btn-clear" class="btn danger">Delete all putts</button>
+        <button id="w-clear" class="btn danger">Delete all wedge swings</button>
       </div>
     </section>
   </main>
@@ -173,7 +225,27 @@
     <label class="row small">Hole distance <input id="cap-hole" type="number" inputmode="decimal" min="0" step="0.5" placeholder="optional"> <span id="cap-hole-unit" class="muted">ft</span></label>
   </section>
 
+  <section id="wcap" hidden>
+    <div id="wcap-stage">
+      <video id="wcam" playsinline muted autoplay></video>
+      <canvas id="wcap-overlay"></canvas>
+      <span id="wcap-fps" class="cap-fps"></span>
+    </div>
+    <div id="wcap-read" class="wread"></div>
+    <ul class="checks">
+      <li id="wchk-phone" class="unknown">Phone straight</li>
+      <li id="wchk-body" class="unknown">Whole body in the picture</li>
+      <li id="wchk-face" class="unknown">Facing the camera</li>
+      <li id="wchk-addr" class="unknown">At address</li>
+    </ul>
+    <p id="wcap-msg" class="instruction"></p>
+    <div class="row buttons">
+      <button id="wcap-done" class="btn primary">Done</button>
+    </div>
+    <label class="row small"><input type="checkbox" id="wcap-voice" checked> Say the positions out loud</label>
+  </section>
   <video id="video" playsinline muted preload="auto"></video>
+  <video id="wvideo" playsinline muted preload="auto"></video>
   <script type="module" src="js/app.js"></script>
 </body>
 </html>

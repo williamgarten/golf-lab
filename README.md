@@ -18,7 +18,18 @@ lined up is used to find the stickers in the analysis. **Check the level**
 runs the two-reading test (reading, turn 180°, reading) to find and correct the sensor's own
 error. `?fakecam=test/live.mp4` lets a video stand in for the camera when testing on a computer.
 
- **Phase 2 (putting) is built first:** film a putt
+ **Wedges: clock drills.** Film yourself face-on (tripod ~10 ft in front, phone sideways, waist
+high). The body tracker (MediaPipe Pose, Google's free open-source model, runs on the phone; ~10 MB
+downloaded once, then cached offline) finds your lead arm, the clock hand: down = 6:00, level = 9:00,
+up = 12:00. Through is counted as a mirror image ("9 to 9" = level both sides). A live session
+watches every swing with no taps, says "Back 9:15, 10 minutes long. Through 9, right on", shows the
+top and finish with the clock drawn on, and saves each swing. Type the carry and it builds your
+yardage chart per club and drill (average and ± spread, counting only on-target swings), plus how
+often you hit the positions. Tempo is shown as approximate (±0.4 at 30 fps). Checks: phone straight
+(sideways lean, from the motion sensor), whole body in the picture, facing the camera, hands
+together at address. `?fakepose=1` (or `=fast`) runs a made-up session for testing on a computer.
+
+**Phase 2 (putting) is built first:** film a putt
 from directly above, tap the ball and the hole, and it tells you how many degrees
 left/right the ball started vs. your aim line, where that line reaches the hole,
 where the ball finished, ball speed off the face, pace, and the green's Stimp reading.
@@ -62,13 +73,21 @@ in about a minute; the app checks for the new version each time it opens.
 | `js/stroke.js` | Follows the putter stickers (by colour) at 60 samples/s, then: takeaway (from how the head speeds up out of address), top, impact (from the ball), arc inside/outside, path at impact (curve fit), face angle (toe-heel line, averaged around impact), tempo |
 | `js/analysis.js` | Start angle (first ~16 in of roll), miss at the hole, finish position. Scale comes from the ball's known size (42.67 mm). Speed: curve fit to the first positions, backed up to the moment of impact. Green speed: skips the first ~1 ft (skid), fits the steady slowdown `a` of the rolling ball, Stimp = 1.83² / (2a) m (a Stimpmeter releases the ball at 6 ft/s) |
 | `js/app.js` | Screens, taps, drawing, replay, history |
+| `js/capture.js` | Live putting camera: ball circle, level, putter line-up, voice, auto-record |
+| `js/pose.js` | Loads MediaPipe Pose (pinned 0.10.14, full model) and runs it on a frame |
+| `js/clock.js` | Wedge clock maths: lead-arm angle, top / impact / finish, clock positions, tempo |
+| `js/wedges.js` | Wedges tab: live clock-drill session, video upload, yardage chart |
 | `js/store.js` | localStorage on the phone |
 
 ## Test
 
 ```bash
 node tools/test-tracker.mjs
+node tools/test-clock.mjs
 ```
+
+`test-clock.mjs` checks 6 fake swings (7:30, 9, 10:30, full past 12, left-handed, choppy 15 fps)
+plus a waggle that must not count: positions within 2° (3° at noisy 15 fps), tempo within 0.5.
 
 Generates 7 synthetic overhead putts (ball skid-then-roll + a putter with toe/heel stickers
 on a known arc, face angle and tempo; straight, slight arc, strong arc, outside, one sticker,
@@ -91,4 +110,5 @@ face at impact within 0.2°, tempo 2.01 (one slow-stroke case 1.87) for a true 2
   ~0.3°; from much higher (stickers only a few pixels) it can be off by ~0.5-1°.
 - The stroke is measured in 2D from above; a tilted phone or a putter shaft leaning a lot
   can skew face angle slightly.
-- Next: the swing tab (MediaPipe pose).
+- Wedges: not yet tried on a real person's video — body-tracker accuracy on real swings is the
+  first thing to check. The facing-the-camera check (shoulder width vs torso) is a guess to tune.

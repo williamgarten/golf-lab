@@ -27,3 +27,13 @@ export const lastSetup = {
   get: () => read(SETUP, null),
   set(s) { write(SETUP, s); },
 };
+
+// Wedge clock-drill swings: { id, date, club, target: {back, thru}, back, thru (clock hours), tempo, carry (yards) }
+const WEDGES = 'golflab.wedges.v1';
+export const wedges = {
+  all: () => read(WEDGES, []),
+  add(s) { const a = wedges.all(); a.unshift(s); write(WEDGES, a.slice(0, 2000)); },
+  update(id, patch) { write(WEDGES, wedges.all().map((s) => (s.id === id ? { ...s, ...patch } : s))); },
+  remove(id) { write(WEDGES, wedges.all().filter((s) => s.id !== id)); },
+  clear() { write(WEDGES, []); },
+};
