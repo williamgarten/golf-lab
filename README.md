@@ -1,5 +1,8 @@
 # Golf Lab
 
+**Open it: https://williamgarten.github.io/golf-lab/** — on iPhone, Safari → Share →
+**Add to Home Screen** to use it like an app (works offline after the first visit).
+
 Free, private golf practice web app. **Phase 2 (putting) is built first:** film a putt
 from directly above, tap the ball and the hole, and it tells you how many degrees
 left/right the ball started vs. your aim line, where that line reaches the hole,
@@ -30,10 +33,10 @@ Open http://localhost:8790. Click **Try the demo putt**, tap the ball, tap the h
 To try it on your iPhone on the same Wi-Fi: open `http://<your-Mac's-IP>:8790` in Safari.
 (Offline mode / install only works once it's on an https host — see below.)
 
-## Put it online for free (when you're ready)
+## Hosting
 
-Any static host works: GitHub Pages, Netlify, Vercel or Firebase Hosting. Upload the
-folder as-is. No API keys, nothing to pay for.
+Hosted free on GitHub Pages from the `main` branch. Push to `main` and the site updates
+in about a minute; the app checks for the new version each time it opens.
 
 ## How it works
 
