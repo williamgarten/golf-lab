@@ -9,7 +9,12 @@ Free, private golf practice web app.
 "putt this way" arrow and a bubble level from the phone's tilt sensor. It talks you through
 the setup (you can't see the screen with the phone overhead), records by itself once the
 phone is level and still and the ball is in the circle, stops after the ball rolls away,
-then finds the ball and putter stickers itself and analyzes with no taps. **Check the level**
+then finds the ball and putter stickers itself and analyzes with no taps. **Putter line-up
+monitor:** with the toe/heel stickers on, it checks the putter at address (head centred behind
+the ball, 2-10 cm back, face within 1.5° of square to the putt line, held still) and coaches
+("Face is open. Square it up", "Slide the putter a little left") until it can say "Lined up. Go
+ahead." It only talks while the putter is held still, never mid-stroke, and the moment you
+lined up is used to find the stickers in the analysis. **Check the level**
 runs the two-reading test (reading, turn 180°, reading) to find and correct the sensor's own
 error. `?fakecam=test/live.mp4` lets a video stand in for the camera when testing on a computer.
 

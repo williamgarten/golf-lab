@@ -1,5 +1,5 @@
 // Offline support: cache the app shell so it opens on the range with no signal.
-const CACHE = 'golflab-v4';
+const CACHE = 'golflab-v5';
 const SHELL = [
   './', 'index.html', 'style.css', 'manifest.webmanifest',
   'js/app.js', 'js/follow.js', 'js/stroke.js', 'js/capture.js', 'js/tracker.js', 'js/analysis.js', 'js/store.js',

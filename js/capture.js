@@ -2,7 +2,7 @@
 // level from the phone's tilt sensor, and talks you through the setup (you can't
 // see the screen with the phone overhead). When the phone is level, still and the
 // ball is in the circle, it records by itself and stops after the ball rolls away.
-import { detectBallAt } from './tracker.js';
+import { detectBallAt, autoFindStickers } from './tracker.js';
 import { settings } from './store.js';
 
 const $ = (id) => document.getElementById(id);
@@ -10,10 +10,18 @@ const ZONE = { x: 0.5, y: 0.72, r: 0.11 };   // "place ball here": centre (fract
 const LEVEL_TOL = 1.5;                       // degrees
 const READY_HOLD = 1500;                     // ms everything must stay green before recording starts
 const AFTER_PUTT = 4500;                     // ms to keep recording after the ball leaves the circle
-const MAX_REC = 30000;
+const MAX_REC = 60000;
+// Putter line-up (needs the two stickers on the putter, toe + heel):
+const FACE_TOL = 1.5;                        // degrees from square
+const CENTRE_TOL = 2;                        // cm the head centre may sit left/right of the ball
+const GAP = [2, 10];                         // cm the head centre sits behind the ball centre
+const LINEUP_HOLD = 600;                     // ms the putter must stay put to count as lined up
+const BALL_CM = 4.267;
 
 const work = document.createElement('canvas');
 const wctx = work.getContext('2d', { willReadFrequently: true });
+const crop = document.createElement('canvas');   // full-resolution close-up around the ball, for the putter
+const cctx = crop.getContext('2d', { willReadFrequently: true });
 let C = null;                                // current session state
 let fakeVid = null;                          // ?fakecam= testing only
 
@@ -82,7 +90,7 @@ export async function openCapture(onDone) {
   await new Promise((r) => (cam.videoWidth ? r() : cam.addEventListener('loadedmetadata', r, { once: true })));
 
   C = { stream, onDone, motionOk, readySince: 0, rec: null, chunks: [], recStart: 0, ballGoneSince: 0,
-    ballSeen: false, ballAtStart: null, lastBall: null, timer: null, fps: stream.getVideoTracks()[0]?.getSettings?.().frameRate };
+    ballSeen: false, ballAtStart: null, lastBall: null, timer: null, lineup: null, lineHist: [], linedUpAt: 0, addressT: null, noStickerSaid: false, fps: stream.getVideoTracks()[0]?.getSettings?.().frameRate };
   document.body.classList.add('capturing');
   $('capture').hidden = false;
   // Size the preview to the camera's exact shape (fits the width, max 70% of the screen
@@ -154,6 +162,13 @@ function tick() {
   setCheck('chk-ball', ballIn, ballIn ? 'Ball in the circle' : 'Put the ball in the circle');
   setCheck('chk-still', still, 'Phone held still');
 
+  // Putter lined up behind the ball? (only while it's still at address)
+  const lu = ballIn && !(C.rec && C.linedUpAt) ? checkLineup(cam, ball, W) : C.lineup;
+  C.lineup = lu;
+  if (lu) C.sawPutter = true;
+  if (ballIn) drawLineup(lu);
+  setCheck('chk-putter', C.linedUpAt ? true : lu ? lu.ok : null, C.linedUpAt ? 'Putter lined up ✓' : lu ? lu.text : 'Putter: put the toe & heel stickers on to check the line-up');
+
   if (C.rec) return recordingTick(ballIn);
 
   // Coaching (spoken, one thing at a time).
@@ -201,11 +216,21 @@ function startRecording() {
   C.ballGoneSince = 0;
   $('cap-rec').textContent = 'Stop';
   $('capture').classList.add('recording');
-  say('Recording. Putt when you’re ready.', { force: true });
+  say(C.lineup ? 'Recording. Set the putter behind the ball.' : 'Recording. Putt when you’re ready.', { force: true });
 }
 
 function recordingTick(ballIn) {
   const now = Date.now();
+  if (ballIn && !C.linedUpAt) {
+    const lu = C.lineup;
+    if (!lu) {
+      if (now - C.recStart > 2500 && !C.noStickerSaid && !C.sawPutter) { C.noStickerSaid = true; say('I can’t see the putter stickers, so I won’t check the line up. Putt when you’re ready.', { force: true }); }
+    } else if (lu.ok && lu.steadyMs >= LINEUP_HOLD) {
+      C.linedUpAt = now;
+      C.addressT = (now - C.recStart) / 1000;
+      say('Lined up. Go ahead.', { force: true });
+    } else if (!lu.ok && lu.steadyMs >= 400) say(lu.hint, { gap: 3000 });   // only while the putter is held still, never mid-stroke
+  }
   $('cap-msg').textContent = `Recording… ${((now - C.recStart) / 1000).toFixed(0)} s`;
   if (!ballIn) { if (!C.ballGoneSince) C.ballGoneSince = now; } else C.ballGoneSince = 0;
   if ((C.ballGoneSince && now - C.ballGoneSince > AFTER_PUTT) || now - C.recStart > MAX_REC) stopRecording();
@@ -217,11 +242,80 @@ function stopRecording() {
 
 function finishRecording() {
   const blob = new Blob(C.chunks, { type: C.rec.mimeType || 'video/mp4' });
-  const meta = { ball: C.ballAtStart ? [C.ballAtStart.x, C.ballAtStart.y] : null, holeDistCm: settings.get().holeDistCm || null };
+  const meta = { ball: C.ballAtStart ? [C.ballAtStart.x, C.ballAtStart.y] : null, holeDistCm: settings.get().holeDistCm || null,
+    addressT: C.addressT, address: C.linedUpAt && C.lineup ? { faceDeg: C.lineup.faceDeg, acrossCm: C.lineup.acrossCm, gapCm: C.lineup.gapCm } : null };
   const done = C.onDone;
   say('Got it. Analyzing.', { force: true });
   closeCapture();
   done(blob, meta);
+}
+
+// ---------------------------------------------------------------- putter line-up
+
+// Looks at a full-resolution close-up behind the ball, finds the toe and heel
+// stickers and checks: head centred behind the ball, right distance back, face
+// square to the putt line (straight up the picture), and held still.
+function checkLineup(cam, ball, W) {
+  const vw = cam.videoWidth, vh = cam.videoHeight, k = vw / W;
+  const bx = ball.x * k, by = ball.y * k, rN = Math.max(2, ball.r * k);
+  const cmPerPxN = BALL_CM / 2 / rN;
+  const half = 16 / cmPerPxN;                                  // ±16 cm across
+  const sx = Math.max(0, bx - half), sy = Math.max(0, by - 8 / cmPerPxN);
+  const sw = Math.min(vw - sx, 2 * half), sh = Math.min(vh - sy, 26 / cmPerPxN);   // 8 cm ahead to 18 cm behind
+  if (sw < 20 || sh < 20) return null;
+  const s = Math.min(1, 420 / Math.max(sw, sh));
+  crop.width = Math.round(sw * s); crop.height = Math.round(sh * s);
+  cctx.drawImage(cam, sx, sy, sw, sh, 0, 0, crop.width, crop.height);
+  const im = cctx.getImageData(0, 0, crop.width, crop.height);
+  const P = { width: im.width, height: im.height, data: im.data, ox: 0, oy: 0 };
+  const b = detectBallAt(P, (bx - sx) * s, (by - sy) * s) || { x: (bx - sx) * s, y: (by - sy) * s, r: rN * s };
+  const cmPerPx = BALL_CM / 2 / b.r;
+  const found = autoFindStickers(P, cmPerPx);
+  if (found.length < 2) return null;
+  let [p, q] = found;
+  if (p.x > q.x) [p, q] = [q, p];                              // p = left sticker
+  const mid = { x: (p.x + q.x) / 2, y: (p.y + q.y) / 2 };
+  const acrossCm = (mid.x - b.x) * cmPerPx;                    // + = right of the ball
+  const gapCm = (mid.y - b.y) * cmPerPx;                       // + = behind (down the picture)
+  if (Math.abs(acrossCm) > 14 || gapCm < -4 || gapCm > 18) return null;   // not the putter
+  let faceDeg = (Math.atan2(q.y - p.y, q.x - p.x) * 180) / Math.PI;     // + = face turned right
+  if (settings.get().hand === 'left') faceDeg = -faceDeg;    // + = open for either hand
+
+  // Steady = sticker midpoint and face angle barely moved over the last second.
+  const now = Date.now();
+  C.lineHist.push({ t: now, x: mid.x * cmPerPx, y: mid.y * cmPerPx, f: faceDeg });
+  while (C.lineHist.length && C.lineHist[0].t < now - 1000) C.lineHist.shift();
+  const H = C.lineHist, rng = (f) => Math.max(...H.map(f)) - Math.min(...H.map(f));
+  const steady = H.length >= 3 && rng((h) => h.x) < 0.5 && rng((h) => h.y) < 0.5 && rng((h) => h.f) < 0.6;
+  if (!steady) C.steadySince = 0; else if (!C.steadySince) C.steadySince = now;
+
+  const centred = Math.abs(acrossCm) <= CENTRE_TOL, close = gapCm >= GAP[0] && gapCm <= GAP[1], square = Math.abs(faceDeg) <= FACE_TOL;
+  const ok = centred && close && square;
+  const toFix = !close ? (gapCm > GAP[1] ? 'Move the putter up to the ball' : 'Ease the putter back from the ball')
+    : !square ? (faceDeg > 0 ? 'Face is open. Square it up' : 'Face is closed. Square it up')
+    : !centred ? `Slide the putter a little ${acrossCm > 0 ? 'left' : 'right'}` : '';
+  const face = `${Math.abs(faceDeg).toFixed(1)}° ${Math.abs(faceDeg) < 0.05 ? '' : faceDeg > 0 ? 'open' : 'closed'}`;
+  return {
+    ok, hint: toFix, faceDeg, acrossCm, gapCm, steadyMs: steady ? now - C.steadySince : 0,
+    text: ok ? `Putter square (${face}) & centred` : !square && close ? `Putter face ${face} — square it up` : `Putter: ${toFix.toLowerCase()} (face ${face})`,
+    // positions as fractions of the picture, for drawing
+    pts: [p, q].map((t) => ({ x: (sx + t.x / s) / vw, y: (sy + t.y / s) / vh })),
+  };
+}
+
+function drawLineup(lu) {
+  if (!lu?.pts) return;
+  const cv = $('cap-overlay'), g = cv.getContext('2d');
+  const w = $('cap-stage').clientWidth, h = $('cap-stage').clientHeight;
+  const [a, b] = lu.pts.map((p) => ({ x: p.x * w, y: p.y * h }));
+  const good = lu.ok || C.linedUpAt;
+  g.strokeStyle = good ? '#4ee38a' : '#ff8a4d'; g.lineWidth = 3;
+  g.beginPath(); g.moveTo(a.x, a.y); g.lineTo(b.x, b.y); g.stroke();
+  // the face's aim: a short arrow at right angles to the toe-heel line
+  const mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2, L = Math.hypot(b.x - a.x, b.y - a.y) || 1;
+  const nx = (b.y - a.y) / L, ny = -(b.x - a.x) / L;
+  g.beginPath(); g.moveTo(mx, my); g.lineTo(mx + nx * L * 1.6, my + ny * L * 1.6); g.stroke();
+  [a, b].forEach((p) => { g.beginPath(); g.arc(p.x, p.y, 5, 0, Math.PI * 2); g.stroke(); });
 }
 
 // ---------------------------------------------------------------- drawing

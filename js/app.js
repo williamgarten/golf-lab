@@ -78,6 +78,7 @@ async function loadVideo(src, auto = null) {
     S.holeDistCm = auto.holeDistCm || null;
     if (S.holeDistCm) $('hole-dist').value = (S.holeDistCm / (settings.get().units === 'metric' ? 100 : 30.48)).toFixed(1);
     S.autoStickers = true;
+    S.addressT = auto.addressT ?? null;     // when the live check saw the putter lined up
     analyze();
   }
 }
@@ -86,6 +87,7 @@ function resetMarks() {
   S.ball = S.target = S.track = S.result = S.stroke = null;
   S.stickers = [];
   S.autoStickers = false;
+  S.addressT = null;
   S.holeDistCm = null;
   $('hole-dist').value = '';
   $('result').hidden = true;
@@ -360,8 +362,10 @@ async function analyze() {
     // Live-recorded putt: look for the stickers just behind the ball while you're at address.
     setInstruction('Looking for putter stickers\u2026');
     const back = 6 / res.cmPerPx, R = 18 / res.cmPerPx;
-    for (const before of [1.4, 1.8, 1.1]) {
-      const t0 = Math.max(S.tStart, impactT - before * ts);
+    const tries = [1.4, 1.8, 1.1].map((b) => impactT - b * ts);
+    if (S.addressT != null && S.addressT < impactT) tries.unshift(S.addressT);
+    for (const tt of tries) {
+      const t0 = Math.max(S.tStart, tt);
       await seekTo(t0); grabFrame();
       const pt = patch(S.ball.x - res.aim.x * back, S.ball.y - res.aim.y * back, R);
       const found = pt ? autoFindStickers(pt, res.cmPerPx) : [];
