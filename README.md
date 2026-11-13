@@ -3,7 +3,17 @@
 **Open it: https://williamgarten.github.io/golf-lab/** — on iPhone, Safari → Share →
 **Add to Home Screen** to use it like an app (works offline after the first visit).
 
-Free, private golf practice web app. **Phase 2 (putting) is built first:** film a putt
+Free, private golf practice web app.
+
+**Live mode (Set up & record a putt):** live camera with a "place ball here" circle, a
+"putt this way" arrow and a bubble level from the phone's tilt sensor. It talks you through
+the setup (you can't see the screen with the phone overhead), records by itself once the
+phone is level and still and the ball is in the circle, stops after the ball rolls away,
+then finds the ball and putter stickers itself and analyzes with no taps. **Check the level**
+runs the two-reading test (reading, turn 180°, reading) to find and correct the sensor's own
+error. `?fakecam=test/live.mp4` lets a video stand in for the camera when testing on a computer.
+
+ **Phase 2 (putting) is built first:** film a putt
 from directly above, tap the ball and the hole, and it tells you how many degrees
 left/right the ball started vs. your aim line, where that line reaches the hole,
 where the ball finished, ball speed off the face, pace, and the green's Stimp reading.

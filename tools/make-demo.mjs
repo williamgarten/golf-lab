@@ -9,6 +9,7 @@
 //   back=20 thru=25 (cm)  arc=1.5 (cm inside at the top)  path=0 (deg, + = in-to-out)
 //   face=0.5 (deg open at impact)  rot=3 (deg the face opens by the top)
 //   tback=0.6 tfwd=0.3 (s)  stickers=2 (0, 1 or 2)
+//   impact=1.5 (s into the video)  seconds=5  bally (ball height as a fraction of the frame)
 //
 // The ball skids for 0.1 s, then rolls with the steady slowdown that a green of
 // that Stimp reading gives.
@@ -24,12 +25,12 @@ const FPS = num('fps', 30), CM_PER_PX = num('scale', 0.3);
 const BACK = num('back', 20), THRU = num('thru', 25), ARC = num('arc', 1.5), PATH = num('path', 0);
 const FACE = num('face', 0.5), ROT = num('rot', 3), TBACK = num('tback', 0.6), TFWD = num('tfwd', 0.3);
 const STICKERS = num('stickers', 2);
-const W = 720, H = 1280, SECONDS = 5;
+const W = 720, H = 1280, SECONDS = num('seconds', 5);
 const px = (cm) => cm / CM_PER_PX;
 
 const BALL_R = px(4.267 / 2);
 const HOLE_R = px(5.4);
-const ball0 = { x: 360, y: Math.min(1100, H - px(BACK + 12) - 20) };
+const ball0 = { x: 360, y: arg.bally ? Math.round(num('bally') * H) : Math.min(1100, H - px(BACK + 12) - 20) };
 const hole = { x: 360, y: ball0.y - px(270) };
 
 function rng(seed) { return () => ((seed = (seed * 1664525 + 1013904223) >>> 0) / 2 ** 32); }
@@ -49,7 +50,7 @@ for (let i = 0; i < W * H; i++) {
 // ---- ball
 const a = (ANGLE * Math.PI) / 180;
 const dir = { x: Math.sin(a), y: -Math.cos(a) };   // aim is straight up the screen
-const impactT = 1.5;
+const impactT = num('impact', 1.5);
 const ROLL_DECEL = 1.83 ** 2 / (2 * STIMP * 0.3048);
 const SKID_DECEL = 3.0, SKID_T = 0.1;
 const v1 = LAUNCH_MPS - SKID_DECEL * SKID_T;

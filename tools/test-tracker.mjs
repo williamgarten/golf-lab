@@ -4,7 +4,7 @@ import { execFileSync } from 'node:child_process';
 import { mkdtempSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { detectBallAt, detectHoleAt, detectStickerAt } from '../js/tracker.js';
+import { detectBallAt, detectHoleAt, detectStickerAt, autoFindStickers } from '../js/tracker.js';
 import { followBall } from '../js/follow.js';
 import { followPutter, analyzeStroke } from '../js/stroke.js';
 import { analyzePutt } from '../js/analysis.js';
@@ -17,6 +17,7 @@ const cases = [
   'angle=-4 stimp=11 mph=3.6 fps=30 arc=-1.2 face=-2 rot=1',                 // outside on the way back
   'angle=6 stimp=7 mph=4.2 fps=60 stickers=0',                               // no stickers
   'angle=-1 scale=0.13 fps=60 arc=0.4 face=-1 rot=2',                        // close-up: hole off screen
+  'auto=1 angle=1 scale=0.13 fps=30 bally=0.72 impact=4.5 seconds=9 arc=0.8 face=0.7', // live mode: no taps at all
 ];
 
 const dir = mkdtempSync(join(tmpdir(), 'golflab-'));
@@ -47,16 +48,18 @@ for (const [n, spec] of cases.entries()) {
   // The user's taps (slightly off, like a real finger).
   await frameAt(0.01);
   const ball = detectBallAt(patch(T.ball.x + 3, T.ball.y - 4, 60), T.ball.x + 3, T.ball.y - 4);
+  const auto = spec.includes('auto=1');
   let target, holeDistCm = null;
-  if (T.holeInFrame) target = detectHoleAt(patch(T.hole.x + 8, T.hole.y + 10, 90), T.hole.x + 8, T.hole.y + 10, ball.area);
+  if (auto) target = { x: ball.x, y: ball.y - 500, virtual: true };   // "putt toward the top of the picture"
+  else if (T.holeInFrame) target = detectHoleAt(patch(T.hole.x + 8, T.hole.y + 10, 90), T.hole.x + 8, T.hole.y + 10, ball.area);
   else { target = { x: T.ball.x, y: T.ball.y - 500 }; holeDistCm = 270; }
-  const stickers = T.stickers.map((s) => detectStickerAt(patch(s.x + 2, s.y + 2, 40), s.x + 2, s.y + 2));
+  let stickers = auto ? [] : T.stickers.map((s) => detectStickerAt(patch(s.x + 2, s.y + 2, 40), s.x + 2, s.y + 2));
 
   const lines = [];
   const check = (label, ok, txt) => { lines.push(`${ok ? '  ' : '✗ '}${label} ${txt}`); return ok; };
   let ok = check('taps', !!(ball && target && stickers.every(Boolean)), `ball r=${ball?.r.toFixed(2)} target=${!!target} stickers=${stickers.filter(Boolean).length}/${T.stickers.length}`);
 
-  const track = await followBall({ ball, tStart: 0.01, duration: nFrames / fps, frameAt, patch });
+  const track = await followBall({ ball, tStart: 0.01, duration: nFrames / fps, frameAt, patch, frameSize: { W, H } });
   if (track.error) { console.log(`FAIL #${n} ${spec}: ${track.error}`); failed++; continue; }
   const res = analyzePutt({ p0: ball, r: ball.r, target, points: track.points, endReason: track.endReason, holeDistCm });
   const sp = res.speed || {};
@@ -65,9 +68,17 @@ for (const [n, spec] of cases.entries()) {
   ok &= check('speed', near(mph / T.mph, 1, 0.06), `${T.mph.toFixed(2)} → ${mph.toFixed(2)} mph`);
   ok &= check('stimp', near(sp.stimpFt, T.stimp, 0.5), `${T.stimp} → ${sp.stimpFt?.toFixed(2)}`);
 
+  let tFrom = Math.max(0.01, sp.impactT - 2.5);
+  if (auto) {                                  // same search the app does after a live recording
+    tFrom = sp.impactT - 1.4;
+    await frameAt(tFrom);
+    const back = 6 / res.cmPerPx;
+    stickers = autoFindStickers(patch(ball.x - res.aim.x * back, ball.y - res.aim.y * back, 18 / res.cmPerPx), res.cmPerPx);
+    ok &= check('auto-stickers', stickers.length === 2, `found ${stickers.length}/2`);
+  }
   if (stickers.length) {
     const frames = await followPutter({
-      stickers, tFrom: Math.max(0.01, sp.impactT - 2.5), tTo: Math.min(nFrames / fps - 0.01, sp.impactT + 0.8), frameAt, patch,
+      stickers, tFrom, tTo: Math.min(nFrames / fps - 0.01, sp.impactT + 0.8), frameAt, patch,
     });
     const sk = analyzeStroke({ frames, u: res.aim, cmPerPx: res.cmPerPx, impactT: sp.impactT, hand: 'right' });
     const S = T.stroke;

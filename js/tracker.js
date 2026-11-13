@@ -210,3 +210,30 @@ export function findStickers(patch, model, near, n) {
     .slice(0, n)
     .map((b) => ({ ...b, r: Math.sqrt(b.area / Math.PI), hue: model.hue }));
 }
+
+// No taps: find a pair of bright, same-coloured stickers near the ball (live mode).
+// Looks for the most common vivid non-grass colour, then blobs of sticker size
+// (about 3/4 in across) that sit 1.5-6 in apart. Returns 0, 1 or 2 stickers.
+export function autoFindStickers(patch, cmPerPx) {
+  const { width: w, height: h, data: d } = patch;
+  const bins = new Array(24).fill(0);
+  for (let p = 0; p < w * h; p += 2) {
+    const [hh, s, v] = hsv(d, p * 4);
+    if (s >= 0.45 && v >= 0.35 && !grassHue(hh)) bins[Math.floor(hh / 15) % 24]++;
+  }
+  const best = bins.indexOf(Math.max(...bins));
+  if (bins[best] < 6) return [];
+  const hue = best * 15 + 7.5;
+  const minA = 0.8 / cmPerPx ** 2, maxA = 9 / cmPerPx ** 2;           // cm^2 -> px^2
+  const blobs = stickerBlobs(patch, hue).filter((b) => b.area >= Math.max(4, minA) && b.area <= maxA)
+    .sort((a, b) => b.area - a.area).slice(0, 6);
+  let pair = null, bestScore = Infinity;
+  for (let i = 0; i < blobs.length; i++) for (let j = i + 1; j < blobs.length; j++) {
+    const sep = Math.hypot(blobs[i].x - blobs[j].x, blobs[i].y - blobs[j].y) * cmPerPx;
+    if (sep < 4 || sep > 15) continue;
+    const score = Math.abs(Math.log(blobs[i].area / blobs[j].area));   // similar size
+    if (score < bestScore) { bestScore = score; pair = [blobs[i], blobs[j]]; }
+  }
+  const out = pair || blobs.slice(0, 1);
+  return out.map((b) => ({ ...b, r: Math.sqrt(b.area / Math.PI), hue }));
+}

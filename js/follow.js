@@ -8,7 +8,8 @@ const REST_STEP = 0.1;     // coarser steps while waiting for the stroke
 // ball: model from detectBallAt. frameAt(t): load frame at time t, return the
 // actual frame time. patch(cx, cy, R): pixel block around a point of that frame.
 // Returns { restT, points: [{t,x,y}], endReason } or { error }.
-export async function followBall({ ball, tStart, duration, frameAt, patch, onProgress = () => {} }) {
+// frameSize: { W, H } so a ball cut off by the picture edge isn't measured (its centre would lag).
+export async function followBall({ ball, tStart, duration, frameAt, patch, frameSize = null, onProgress = () => {} }) {
   const { r } = ball;
   const rest = { x: ball.x, y: ball.y };
   const moved = (d) => d && Math.hypot(d.x - rest.x, d.y - rest.y) > 0.75 * r;
@@ -43,6 +44,10 @@ export async function followBall({ ball, tStart, duration, frameAt, patch, onPro
       const pred = { x: last.x + vel.x * (lost + 1), y: last.y + vel.y * (lost + 1) };
       const R = Math.max(r * 3, Math.hypot(vel.x, vel.y) * (1.5 + lost) + r * 2);
       d = look(pred, R);
+    }
+    if (d && frameSize && points.length) {
+      const m = 1.5 * r;
+      if (d.x < m || d.y < m || d.x > frameSize.W - m || d.y > frameSize.H - m) { endReason = 'lost'; break; }
     }
     if (d) {
       const nv = { x: d.x - last.x, y: d.y - last.y };

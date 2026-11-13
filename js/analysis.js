@@ -16,6 +16,8 @@ function signedAngle(ax, ay, bx, by) {
 // p0: ball at rest {x,y}; r: ball radius px; target: aim point {x,y};
 // points: [{t,x,y}] after the ball started moving; endReason: 'stopped'|'lost'|'video-end'.
 // holeDistCm: typed-in hole distance when the hole isn't in the picture (target = a point on the line).
+// target.virtual: no hole tapped, just "toward the top of the picture" (distance unknown
+// unless holeDistCm is typed in).
 export function analyzePutt({ p0, r, target, points, endReason, flip = false, timeScale = 1, holeDistCm = null }) {
   const cmPerPx = BALL_DIAMETER_CM / (2 * r);
   const ax = target.x - p0.x, ay = target.y - p0.y;
@@ -36,15 +38,16 @@ export function analyzePutt({ p0, r, target, points, endReason, flip = false, ti
 
   const sign = flip ? -1 : 1;
   const angleDeg = sign * signedAngle(ux, uy, sx, sy);
-  const distCm = holeDistCm || aimPx * cmPerPx;
-  const missCm = distCm * Math.tan((angleDeg * Math.PI) / 180);
+  const distCm = holeDistCm || (target.virtual ? null : aimPx * cmPerPx);
+  const missCm = distCm ? distCm * Math.tan((angleDeg * Math.PI) / 180) : null;
   const startLen = Math.hypot(sx, sy);
 
   const result = {
     angleDeg,
     distCm,
     missCm,
-    onLine: Math.abs(missCm) <= HOLE_RADIUS_CM,
+    // Without a distance, "on line" falls back to starting within 1 degree.
+    onLine: missCm != null ? Math.abs(missCm) <= HOLE_RADIUS_CM : Math.abs(angleDeg) <= 1,
     startDir: { x: sx / startLen, y: sy / startLen },
     aim: { x: ux, y: uy },
     pointsUsed: used,
@@ -57,12 +60,12 @@ export function analyzePutt({ p0, r, target, points, endReason, flip = false, ti
   const last = points[points.length - 1];
   if (last) {
     const dx = last.x - target.x, dy = last.y - target.y;
-    const nearHole = !holeDistCm && Math.hypot(dx, dy) * cmPerPx <= HOLE_RADIUS_CM * 2;
+    const nearHole = !holeDistCm && !target.virtual && Math.hypot(dx, dy) * cmPerPx <= HOLE_RADIUS_CM * 2;
     const alongCm = ((last.x - p0.x) * ux + (last.y - p0.y) * uy) * cmPerPx;
     if (endReason === 'stopped') {
       result.finish = {
         kind: 'stopped',
-        longCm: alongCm - distCm,                              // + past the hole, - short
+        longCm: distCm ? alongCm - distCm : null,              // + past the hole, - short
         sideCm: sign * (ux * dy - uy * dx) * cmPerPx,          // + right, - left
       };
     } else if (nearHole) {
@@ -71,7 +74,8 @@ export function analyzePutt({ p0, r, target, points, endReason, flip = false, ti
   }
   result.speed = measureSpeed({ p0, points, cmPerPx, r, timeScale, stopped: endReason === 'stopped' });
   // Pace: where the ball stops (measured, or predicted from its slowdown) vs. the target.
-  if (result.finish?.kind === 'stopped') result.paceCm = result.finish.longCm;
+  if (!distCm) result.paceCm = null;
+  else if (result.finish?.kind === 'stopped') result.paceCm = result.finish.longCm;
   else if (result.speed?.stopCm != null && result.finish?.kind !== 'holed') result.paceCm = result.speed.stopCm - distCm;
   return result;
 }

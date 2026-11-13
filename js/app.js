@@ -1,8 +1,9 @@
-import { detectBallAt, detectHoleAt, detectStickerAt, findStickers } from './tracker.js';
+import { detectBallAt, detectHoleAt, detectStickerAt, findStickers, autoFindStickers } from './tracker.js';
 import { followBall } from './follow.js';
 import { followPutter, analyzeStroke } from './stroke.js';
 import { analyzePutt, summarize, greenSpeed, fmtAngle, fmtLen, fmtSpeed, paceVerdict, HOLE_RADIUS_CM } from './analysis.js';
 import { putts, settings, lastSetup } from './store.js';
+import { openCapture, setupCaptureButtons, setupLevelCheck } from './capture.js';
 
 const $ = (id) => document.getElementById(id);
 const video = $('video');
@@ -14,10 +15,11 @@ const wctx = work.getContext('2d', { willReadFrequently: true });
 const MAX_DIM = 1280;      // analysis resolution (longest side)
 
 const S = {
-  stage: 'pick',           // pick | ball | target | putter | analyzing | result
+  stage: 'pick',           // pick | ball | marks | analyzing | result
   W: 0, H: 0,
   ball: null,              // { x, y, r, area, contrast }
-  target: null,            // { x, y, snapped }
+  target: null,            // { x, y, snapped, virtual } (virtual = 'toward the top of the picture')
+  autoStickers: false,     // live-recorded putt: find the putter stickers without taps
   stickers: [],            // putter stickers at address: [{ x, y, area, r, hue }]
   holeDistCm: null,        // typed in when the hole isn't in the picture
   stroke: null,            // analyzeStroke result
@@ -46,7 +48,8 @@ async function seekTo(t) {
   await p;
 }
 
-async function loadVideo(src) {
+// auto: { ball: [fx, fy], holeDistCm } for a putt recorded in live mode: no taps needed.
+async function loadVideo(src, auto = null) {
   showStage('mark');
   setInstruction('Loading video…');
   resetMarks();
@@ -67,11 +70,22 @@ async function loadVideo(src) {
   scrub.value = 0;
   await seekTo(0.01);
   setStage('ball');
+  if (auto) {
+    if (!pickBall({ x: auto.ball[0] * S.W, y: auto.ball[1] * S.H })) {
+      setInstruction('Couldn\u2019t find the ball in the recording \u2014 tap it.', true);
+      return;
+    }
+    S.holeDistCm = auto.holeDistCm || null;
+    if (S.holeDistCm) $('hole-dist').value = (S.holeDistCm / (settings.get().units === 'metric' ? 100 : 30.48)).toFixed(1);
+    S.autoStickers = true;
+    analyze();
+  }
 }
 
 function resetMarks() {
   S.ball = S.target = S.track = S.result = S.stroke = null;
   S.stickers = [];
+  S.autoStickers = false;
   S.holeDistCm = null;
   $('hole-dist').value = '';
   $('result').hidden = true;
@@ -108,7 +122,16 @@ function draw({ upTo = Infinity, live = null } = {}) {
     line(bx, by, ex, ey);
     vctx.setLineDash([]);
   }
-  if (S.target) {
+  if (S.target?.virtual && S.ball) {                   // no hole marked: arrowhead "putt this way"
+    const ux = (S.target.x - S.ball.x), uy = (S.target.y - S.ball.y), L = Math.hypot(ux, uy);
+    const ax = ux / L, ay = uy / L, h = lw * 7;
+    vctx.fillStyle = 'rgba(255,255,255,0.9)';
+    vctx.beginPath();
+    vctx.moveTo(S.target.x + ax * h, S.target.y + ay * h);
+    vctx.lineTo(S.target.x - ay * h * 0.6, S.target.y + ax * h * 0.6);
+    vctx.lineTo(S.target.x + ay * h * 0.6, S.target.y - ax * h * 0.6);
+    vctx.fill();
+  } else if (S.target) {
     const r = S.ball ? HOLE_RADIUS_CM / (4.267 / (2 * S.ball.r)) : W * 0.02;
     ring(S.target.x, S.target.y, r, '#ffd84d', lw);
     vctx.fillStyle = '#ffd84d';
@@ -178,6 +201,7 @@ function showStage(which) {
   $('step-pick').hidden = which !== 'pick';
   $('step-mark').hidden = which !== 'mark';
   $('guide').hidden = which !== 'pick';
+  $('levelcheck').hidden = which !== 'pick';
 }
 
 function setInstruction(text, isError = false) {
@@ -191,17 +215,20 @@ function setStage(stage) {
   const busy = stage === 'analyzing';
   $('scrub-row').hidden = !(stage === 'ball');
   $('btn-analyze').hidden = stage === 'result';
-  $('btn-analyze').disabled = stage !== 'putter';
-  $('hole-row').hidden = !(stage === 'putter' && S.target && !S.target.snapped);
+  $('btn-analyze').disabled = stage !== 'marks';
+  $('btn-analyze').textContent = stage === 'ball' ? 'Analyze (tap the ball first)' : 'Analyze';
+  $('hole-row').hidden = !(stage === 'marks' && S.target && !S.target.snapped);
   $('hole-unit').textContent = settings.get().units === 'metric' ? 'm' : 'ft';
   $('btn-reset').disabled = busy || stage === 'ball';
   $('btn-same').hidden = !(stage === 'ball' && lastSetup.get());
   $('progress').hidden = !busy;
-  if (stage === 'ball') setInstruction('1 · Slide to a moment before your stroke, then tap the ball.');
-  if (stage === 'target') setInstruction('2 · Tap the hole, or the spot you’re aiming at on a breaking putt.');
-  if (stage === 'putter') setInstruction(S.stickers.length
-    ? `${S.stickers.length} sticker${S.stickers.length > 1 ? 's' : ''} marked. Tap Analyze.`
-    : '3 \u00b7 Optional: tap the bright sticker(s) on your putter head. Then tap Analyze.');
+  if (stage === 'ball') setInstruction('1 \u00b7 Slide to a moment before your stroke, then tap the ball.');
+  if (stage === 'marks') {
+    const aim = S.target?.virtual ? 'Aim = straight up the picture (dashed line). Tap the hole or a tee on your line to change it.'
+      : S.target?.snapped ? 'Aim = the hole.' : 'Aim = the spot you tapped.';
+    const st = S.stickers.length ? ` ${S.stickers.length} putter sticker${S.stickers.length > 1 ? 's' : ''} marked.` : ' Optional: tap the stickers on your putter.';
+    setInstruction(`2 \u00b7 Ready \u2014 tap Analyze. ${aim}${st}`);
+  }
   if (stage === 'analyzing') setInstruction('Following the ball\u2026');
   draw();
 }
@@ -218,8 +245,7 @@ view.addEventListener('pointerup', (e) => {
   if (S.replaying) return;
   const p = frameTap(e);
   if (S.stage === 'ball') return pickBall(p);
-  if (S.stage === 'target') return pickTarget(p);
-  if (S.stage === 'putter') return pickSticker(p);
+  if (S.stage === 'marks') return pickSticker(p, true) || pickTarget(p);
 });
 
 function pickBall(p) {
@@ -230,7 +256,9 @@ function pickBall(p) {
   if (!ball) { setInstruction('Couldn’t find a white ball there — tap right on the ball.', true); return false; }
   S.ball = ball;
   S.tStart = video.currentTime;
-  setStage('target');
+  // Until the hole is tapped, aim straight up the picture.
+  S.target = { x: ball.x, y: Math.max(5, ball.y - Math.max(S.H * 0.4, ball.r * 10)), snapped: false, virtual: true };
+  setStage('marks');
   return true;
 }
 
@@ -239,20 +267,26 @@ function pickTarget(p) {
   const R = Math.max(50, S.ball.r * 9);
   const pt = patch(p.x, p.y, R);
   const hole = pt && detectHoleAt(pt, p.x, p.y, S.ball.area);
+  if (Math.hypot(p.x - S.ball.x, p.y - S.ball.y) < S.ball.r * 4) return;   // too close to the ball to be an aim point
   S.target = hole ? { ...hole, snapped: true } : { ...p, snapped: false };
-  setStage('putter');
+  setStage('marks');
 }
 
-function pickSticker(p) {
+// quiet: return false (no message) when there's no sticker, so the tap can set the aim instead.
+function pickSticker(p, quiet = false) {
   grabFrame();
   const pt = patch(p.x, p.y, Math.max(30, S.W * 0.04));
   const st = pt && detectStickerAt(pt, p.x, p.y);
-  if (!st) { setInstruction('No bright sticker there. Neon pink or orange dots work best.', true); return; }
+  if (!st || Math.hypot(st.x - p.x, st.y - p.y) > Math.max(20, st.r * 4)) {
+    if (!quiet) setInstruction('No bright sticker there. Neon pink or orange dots work best.', true);
+    return false;
+  }
   if (S.stickers.length === 2) {                       // replace the nearest one
     const k = Math.hypot(S.stickers[0].x - st.x, S.stickers[0].y - st.y) < Math.hypot(S.stickers[1].x - st.x, S.stickers[1].y - st.y) ? 0 : 1;
     S.stickers[k] = st;
   } else if (!S.stickers.some((o) => Math.hypot(o.x - st.x, o.y - st.y) < st.r * 2)) S.stickers.push(st);
-  setStage('putter');
+  setStage('marks');
+  return true;
 }
 
 $('hole-dist').addEventListener('input', (e) => {
@@ -279,14 +313,14 @@ $('btn-same').addEventListener('click', async () => {
     setInstruction('The ball isn’t where it was last time — tap it.', true);
     return;
   }
-  S.target = { x: s.target[0] * S.W, y: s.target[1] * S.H, snapped: s.snapped };
+  S.target = { x: s.target[0] * S.W, y: s.target[1] * S.H, snapped: s.snapped, virtual: !!s.virtual };
   S.holeDistCm = s.holeDistCm || null;
   if (s.sticker) {                                     // find the same-coloured stickers again near the ball
     const near = { x: s.sticker.at[0] * S.W, y: s.sticker.at[1] * S.H };
     const pt = patch(near.x, near.y, S.ball.r * 25);
     if (pt) S.stickers = findStickers(pt, { hue: s.sticker.hue, area: s.sticker.area }, near, s.sticker.count);
   }
-  setStage('putter');
+  setStage('marks');
   analyze();
 });
 
@@ -300,7 +334,7 @@ function progress(t) {
 }
 
 async function analyze() {
-  if (S.stage !== 'putter') return;
+  if (S.stage !== 'marks') return;
   setStage('analyzing');
   const track = await followBall({
     ball: S.ball,
@@ -308,6 +342,7 @@ async function analyze() {
     duration: video.duration,
     frameAt: async (t) => { await seekTo(t); grabFrame(); return video.currentTime; },
     patch,
+    frameSize: { W: S.W, H: S.H },
     onProgress: (t, tr) => { if (tr) S.track = tr; progress(t); draw({ live: work }); },
   });
   if (track.error) { S.track = null; return finish(track); }
@@ -318,13 +353,26 @@ async function analyze() {
     points: track.points, endReason: track.endReason, flip: st.flip,
     timeScale: st.slowmo, holeDistCm: S.holeDistCm,
   });
+  const ts = st.slowmo;
+  const impactT = res.error ? 0 : res.speed?.impactT ?? track.points[0].t - 1 / 60;
+  let tFrom = Math.max(S.tStart, impactT - 2.5 * ts);
+  if (!res.error && !S.stickers.length && S.autoStickers) {
+    // Live-recorded putt: look for the stickers just behind the ball while you're at address.
+    setInstruction('Looking for putter stickers\u2026');
+    const back = 6 / res.cmPerPx, R = 18 / res.cmPerPx;
+    for (const before of [1.4, 1.8, 1.1]) {
+      const t0 = Math.max(S.tStart, impactT - before * ts);
+      await seekTo(t0); grabFrame();
+      const pt = patch(S.ball.x - res.aim.x * back, S.ball.y - res.aim.y * back, R);
+      const found = pt ? autoFindStickers(pt, res.cmPerPx) : [];
+      if (found.length) { S.stickers = found; tFrom = t0; break; }
+    }
+  }
   if (!res.error && S.stickers.length) {
     setInstruction('Following the putter\u2026');
-    const ts = st.slowmo;
-    const impactT = res.speed?.impactT ?? track.points[0].t - 1 / 60;
     const frames = await followPutter({
       stickers: S.stickers,
-      tFrom: Math.max(S.tStart, impactT - 2.5 * ts),
+      tFrom,
       tTo: Math.min(video.duration - 0.01, impactT + 0.8 * ts),
       frameAt: async (t) => { await seekTo(t); grabFrame(); return video.currentTime; },
       patch,
@@ -353,6 +401,7 @@ function finish(res) {
       ball: [S.ball.x / S.W, S.ball.y / S.H],
       target: [S.target.x / S.W, S.target.y / S.H],
       snapped: S.target.snapped,
+      virtual: !!S.target.virtual,
       holeDistCm: S.holeDistCm,
       sticker: sx.length ? {
         hue: sx[0].hue, area: sx[0].area, count: sx.length,
@@ -377,14 +426,15 @@ function renderResult() {
     return;
   }
   $('btn-discard').hidden = false;
-  const reach = Math.abs(res.missCm) < 0.3
+  const reach = res.missCm == null ? null : Math.abs(res.missCm) < 0.3
     ? 'dead center of the cup'
     : `${fmtLen(res.missCm, u)} ${res.missCm < 0 ? 'left' : 'right'} of center`;
   let finishTxt = 'Ball left the picture — finish not measured';
   if (res.finish?.kind === 'holed') finishTxt = 'Disappeared at the hole — probably holed 🎉';
   if (res.finish?.kind === 'stopped') {
     const { longCm, sideCm } = res.finish;
-    finishTxt = `${fmtLen(longCm, u)} ${longCm >= 0 ? 'long' : 'short'}, ${fmtLen(sideCm, u)} ${sideCm < 0 ? 'left' : 'right'}`;
+    const side = `${fmtLen(sideCm, u)} ${sideCm < 0 ? 'left' : 'right'} of the line`;
+    finishTxt = longCm == null ? `Stopped ${side}` : `${fmtLen(longCm, u)} ${longCm >= 0 ? 'long' : 'short'}, ${side}`;
   }
   el.innerHTML = `
     <div class="verdict ${res.onLine ? 'good' : 'bad'}">
@@ -392,12 +442,12 @@ function renderResult() {
       <div class="tag">${res.onLine ? 'On line ✓' : 'Off line'}</div>
     </div>
     <dl class="facts">
-      <dt>Putt length</dt><dd>${fmtLen(res.distCm, u)}</dd>
-      <dt>Start line at the target</dt><dd>${reach}</dd>
+      ${res.distCm ? `<dt>Putt length</dt><dd>${fmtLen(res.distCm, u)}</dd>
+      <dt>Start line at the hole</dt><dd>${reach}</dd>` : '<dt>Putt length</dt><dd class="muted">type the hole distance for miss &amp; pace</dd>'}
       <dt>Finished</dt><dd>${finishTxt}</dd>
       ${speedRows(res, u)}
     </dl>
-    <p class="muted small">On line = it would still catch the cup (within ${fmtLen(HOLE_RADIUS_CM, u)} of center) if the putt were straight.</p>
+    <p class="muted small">${res.distCm ? `On line = it would still catch the cup (within ${fmtLen(HOLE_RADIUS_CM, u)} of center) if the putt were straight.` : 'On line = started within 1\u00b0 of your aim (no hole distance given).'}${S.target?.virtual ? ' Aim was straight up the picture.' : ''}</p>
     ${strokeSection(u)}
     ${coverageNote(res, u)}`;
 }
@@ -409,7 +459,7 @@ const fmtSide = (cm, u) => (Math.abs(cm) < 0.3 ? 'on the line' : `${fmtLen(cm, u
 function strokeSection(u) {
   const sk = S.stroke;
   if (!S.stickers.length) {
-    return '<p class="hint small">Want stroke path, face angle and tempo? Put two bright dot stickers on top of your putter head (toe and heel) and tap them in step 3.</p>';
+    return '<p class="hint small">Want stroke path, face angle and tempo? Put two bright dot stickers on top of your putter head (toe and heel). Live mode finds them by itself; for uploaded videos, tap them before Analyze.</p>';
   }
   if (!sk || sk.error) return `<h3 class="section">Stroke</h3><p class="muted small">${sk?.error || 'Stroke not measured.'}</p>`;
   const f = sk.face;
@@ -504,7 +554,7 @@ $('btn-replay').addEventListener('click', async () => {
   requestAnimationFrame(loop);
 });
 
-$('btn-new').addEventListener('click', () => $('file').click());
+$('btn-new').addEventListener('click', () => { showStage('pick'); $('btn-live').scrollIntoView({ block: 'center' }); });
 
 // ---------------------------------------------------------------- picking a video
 
@@ -516,6 +566,12 @@ $('file').addEventListener('change', (e) => {
   e.target.value = '';
 });
 $('btn-demo').addEventListener('click', () => loadVideo('demo/putt-demo.mp4'));
+$('btn-live').addEventListener('click', () => openCapture((blob, meta) => {
+  if (video.src.startsWith('blob:')) URL.revokeObjectURL(video.src);
+  loadVideo(URL.createObjectURL(blob), meta.ball ? meta : null);
+}));
+setupCaptureButtons();
+setupLevelCheck();
 
 // ---------------------------------------------------------------- history + settings
 
@@ -539,7 +595,7 @@ function renderHistory() {
     : '<p class="muted">No putts yet. Analyze one and it shows up here.</p>';
   $('list').innerHTML = all.map((p) => `
     <li><span class="dot ${p.onLine ? 'good' : 'bad'}"></span>
-      <span class="grow"><b>${fmtAngle(p.angleDeg)}</b> · ${fmtLen(p.distCm, u)}
+      <span class="grow"><b>${fmtAngle(p.angleDeg)}</b>${p.distCm ? ` \u00b7 ${fmtLen(p.distCm, u)}` : ''}
       <span class="muted small">${new Date(p.date).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}</span></span>
       <button class="x" data-id="${p.id}" aria-label="Delete">×</button></li>`).join('');
   $('btn-clear').hidden = !all.length;

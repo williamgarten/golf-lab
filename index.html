@@ -26,14 +26,27 @@
     <section id="tab-putt">
       <div id="step-pick" class="card">
         <h2>Is your putt starting on line?</h2>
-        <p>Film a putt from directly above, then tap the ball, the hole, and (optional) the stickers on your putter. Golf Lab measures your start line, speed, green speed, stroke path, face angle and tempo.</p>
-        <label class="btn primary block">
-          Record or choose a putt video
+        <p>Film a putt from directly above. Golf Lab measures your start line, ball speed, green speed and, with two stickers on your putter, stroke path, face angle and tempo.</p>
+        <button id="btn-live" class="btn primary block">Set up &amp; record a putt</button>
+        <p class="muted small center">Live camera with a ball marker, putt direction and level. It talks you through the setup and records by itself.</p>
+        <label class="btn block">
+          Choose a video you already filmed
           <input id="file" type="file" accept="video/*" hidden>
         </label>
         <button id="btn-demo" class="btn block">Try the demo putt</button>
         <p class="muted small">Videos never leave your phone. Only the numbers are saved, on this phone.</p>
       </div>
+
+      <details class="card guide" id="levelcheck">
+        <summary>Check the level</summary>
+        <p class="small">Makes sure the phone’s level is telling the truth, and corrects it if not. Lay the phone flat on a table, screen up.</p>
+        <div class="row buttons">
+          <button id="cal-1" class="btn">Reading 1</button>
+          <button id="cal-2" class="btn" disabled>Reading 2</button>
+        </div>
+        <p id="cal-msg" class="small muted">Tap Reading 1, then turn the phone around 180° on the same spot and tap Reading 2.</p>
+        <button id="cal-reset" class="btn small-btn">Clear correction</button>
+      </details>
 
       <details class="card guide" id="guide">
         <summary>Camera setup guide</summary>
@@ -135,6 +148,29 @@
       </div>
     </section>
   </main>
+
+  <section id="capture" hidden>
+    <div id="cap-stage">
+      <video id="cam" playsinline muted autoplay></video>
+      <canvas id="cap-overlay"></canvas>
+      <div id="level" class="level"><span class="cross"></span><div id="bubble" class="bubble"></div></div>
+      <span id="cap-fps" class="cap-fps"></span>
+      <span class="rec-dot">REC</span>
+    </div>
+    <ul class="checks">
+      <li id="chk-level" class="unknown">Level</li>
+      <li id="chk-ball" class="unknown">Ball in the circle</li>
+      <li id="chk-still" class="unknown">Phone held still</li>
+    </ul>
+    <p id="cap-msg" class="instruction"></p>
+    <div class="row buttons">
+      <button id="cap-cancel" class="btn">Cancel</button>
+      <button id="cap-rec" class="btn primary">Record</button>
+    </div>
+    <label class="row small"><input type="checkbox" id="cap-auto" checked> Start recording by itself when everything is green</label>
+    <label class="row small"><input type="checkbox" id="cap-voice" checked> Talk me through it</label>
+    <label class="row small">Hole distance <input id="cap-hole" type="number" inputmode="decimal" min="0" step="0.5" placeholder="optional"> <span id="cap-hole-unit" class="muted">ft</span></label>
+  </section>
 
   <video id="video" playsinline muted preload="auto"></video>
   <script type="module" src="js/app.js"></script>
