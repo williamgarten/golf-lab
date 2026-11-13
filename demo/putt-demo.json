@@ -1,0 +1,38 @@
+{
+ "W": 720,
+ "H": 1280,
+ "fps": 30,
+ "scale": 0.3,
+ "ball": {
+  "x": 360,
+  "y": 1100
+ },
+ "hole": {
+  "x": 360,
+  "y": 200
+ },
+ "holeInFrame": true,
+ "stickers": [
+  {
+   "x": 374.9994288459626,
+   "y": 1113.2425646991423
+  },
+  {
+   "x": 345.0005711540374,
+   "y": 1112.980768634191
+  }
+ ],
+ "angle": 2,
+ "stimp": 10,
+ "mph": 4.47,
+ "stroke": {
+  "backCm": 20,
+  "throughCm": 25,
+  "insideTopCm": 1.5,
+  "insideThroughCm": 2.34375,
+  "pathDeg": 0,
+  "faceImpact": 0.5,
+  "faceTop": 3.5,
+  "tempo": 2
+ }
+}

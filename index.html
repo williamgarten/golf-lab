@@ -1,0 +1,142 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#0e2419">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Golf Lab">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icons/icon-192.png">
+  <link rel="apple-touch-icon" href="icons/icon-180.png">
+  <link rel="stylesheet" href="style.css">
+  <title>Golf Lab</title>
+</head>
+<body>
+  <header>
+    <h1>Golf Lab</h1>
+    <nav>
+      <button data-tab="putt" class="active">Putt</button>
+      <button data-tab="history">History</button>
+    </nav>
+  </header>
+
+  <main>
+    <section id="tab-putt">
+      <div id="step-pick" class="card">
+        <h2>Is your putt starting on line?</h2>
+        <p>Film a putt from directly above, then tap the ball, the hole, and (optional) the stickers on your putter. Golf Lab measures your start line, speed, green speed, stroke path, face angle and tempo.</p>
+        <label class="btn primary block">
+          Record or choose a putt video
+          <input id="file" type="file" accept="video/*" hidden>
+        </label>
+        <button id="btn-demo" class="btn block">Try the demo putt</button>
+        <p class="muted small">Videos never leave your phone. Only the numbers are saved, on this phone.</p>
+      </div>
+
+      <details class="card guide" id="guide">
+        <summary>Camera setup guide</summary>
+        <svg class="diagram" viewBox="0 0 320 170" role="img" aria-label="Side view: phone held 4 feet straight above the ball, seeing about 5 and a half feet of the putt line">
+          <line x1="10" y1="150" x2="310" y2="150" class="g-ground"/>
+          <path d="M160 26 L58 150 L262 150 Z" class="g-cone"/>
+          <rect x="146" y="18" width="28" height="10" rx="3" class="g-phone"/>
+          <line x1="300" y1="23" x2="300" y2="150" class="g-dim"/>
+          <text x="294" y="92" text-anchor="end" class="g-txt">4 ft</text>
+          <circle cx="110" cy="146" r="4" class="g-ball"/>
+          <rect x="88" y="141" width="14" height="6" rx="1.5" class="g-putter"/>
+          <text x="60" y="166" class="g-txt">backstroke</text>
+          <text x="196" y="166" class="g-txt">roll → hole</text>
+          <text x="160" y="118" text-anchor="middle" class="g-txt small">sees ~5½ ft of the line</text>
+        </svg>
+        <h4>Height</h4>
+        <table class="guide-table">
+          <tr><th>Phone height (1× lens)</th><th>Line it sees</th></tr>
+          <tr><td>3 ft (minimum)</td><td>~4 ft</td></tr>
+          <tr><td><b>4 ft (recommended)</b></td><td><b>~5½ ft</b></td></tr>
+          <tr><td>5 ft</td><td>~7 ft</td></tr>
+        </table>
+        <p class="small">On the <b>0.5× lens</b> it sees about twice as much (2 ft high ≈ 5½ ft), but the edges bend a little — keep the putt line through the middle.</p>
+        <h4>Position</h4>
+        <ul class="small">
+          <li>Phone <b>upright, long side along the putt line</b>, straight above the line.</li>
+          <li>Ball about <b>a quarter of the way up</b> from the back edge, so the backstroke fits behind it.</li>
+          <li><b>Level:</b> Settings → Camera → turn on <b>Grid</b> and <b>Level</b>. Pointing straight down, the camera shows a <b>+</b> that lines up when it’s flat.</li>
+          <li><b>Mount:</b> an overhead phone arm / boom tripod (~$20–40), or a selfie stick clamped to a chair.</li>
+          <li>Hole doesn’t fit? Put a tee ~3 ft down your line, tap the tee, and type the hole distance.</li>
+        </ul>
+        <h4>Video</h4>
+        <ul class="small">
+          <li><b>1080p at 60 fps</b> (Settings → Camera → Record Video). Slo-mo isn’t needed.</li>
+          <li>Keep your shadow off the ball and stickers.</li>
+          <li>Green speed needs <b>3+ ft of roll</b> in the picture on a flat-ish putt.</li>
+        </ul>
+        <h4>Putter stickers (for stroke path, face angle, tempo)</h4>
+        <ul class="small">
+          <li>Two <b>neon pink or orange</b> dot stickers (¾ in office dots), on top of the putter head: one at the <b>toe</b>, one at the <b>heel</b>, as far apart as possible.</li>
+          <li>Not green, yellow or white — those get confused with the grass or the ball.</li>
+          <li>One sticker works too (path and tempo, no face angle).</li>
+        </ul>
+      </details>
+
+      <div id="step-mark" hidden>
+        <div class="stage"><canvas id="view"></canvas></div>
+        <p id="instruction" class="instruction"></p>
+        <div class="row" id="scrub-row">
+          <input type="range" id="scrub" min="0" max="1" step="0.01" value="0" aria-label="Video position">
+          <span id="time" class="muted small">0.0s</span>
+        </div>
+        <div id="progress" hidden><div class="bar"><div></div></div></div>
+        <div class="row buttons">
+          <button id="btn-reset" class="btn">Redo taps</button>
+          <button id="btn-same" class="btn" hidden>Same setup as last putt</button>
+          <button id="btn-analyze" class="btn primary" disabled>Analyze</button>
+        </div>
+        <label class="row" id="hole-row" hidden>Hole distance
+          <input id="hole-dist" type="number" inputmode="decimal" min="0" step="0.5" placeholder="optional">
+          <span id="hole-unit" class="muted">ft</span>
+        </label>
+        <div id="result" class="card" hidden></div>
+        <div class="row buttons" id="result-buttons">
+          <button id="btn-replay" class="btn">Replay</button>
+          <button id="btn-discard" class="btn" hidden>Don&rsquo;t count it</button>
+          <button id="btn-new" class="btn primary">Next putt</button>
+        </div>
+      </div>
+    </section>
+
+    <section id="tab-history" hidden>
+      <div id="stats"></div>
+      <ul id="list" class="list"></ul>
+      <div class="card settings">
+        <h3>Settings</h3>
+        <label class="row">Units
+          <select id="set-units">
+            <option value="imperial">Feet &amp; inches</option>
+            <option value="metric">Meters &amp; cm</option>
+          </select>
+        </label>
+        <label class="row">Video type
+          <select id="set-slowmo">
+            <option value="1">Normal (recommended: 1080p 60 fps)</option>
+            <option value="4">Slo-mo 120 fps</option>
+            <option value="8">Slo-mo 240 fps</option>
+          </select>
+        </label>
+        <p class="muted small">Only change this if you film in Slo-mo: iPhone hands the app a slowed-down copy, so speeds would read 4–8× too slow.</p>
+        <label class="row">I putt
+          <select id="set-hand">
+            <option value="right">Right-handed</option>
+            <option value="left">Left-handed</option>
+          </select>
+        </label>
+        <label class="row"><input type="checkbox" id="set-flip"> Swap left/right (only if you film with the selfie camera)</label>
+        <button id="btn-clear" class="btn danger">Delete all putts</button>
+      </div>
+    </section>
+  </main>
+
+  <video id="video" playsinline muted preload="auto"></video>
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>
